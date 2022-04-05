@@ -1,0 +1,466 @@
+---
+title: "Pittsburgh Steelers Database Marketing Analyst Assesment"
+author: "Charlie Pallett"
+output:
+html_document:
+df_print: paged
+---
+
+Set up libaries and tools 
+
+```{r}
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(ggimage)
+library(RCurl)
+library(tidyverse)
+library(ggrepel)
+library(plyr)
+library(cluster)
+library(factoextra)
+library(rmarkdown)
+library("writexl")
+library(clustMixType)
+```
+
+
+Load Data
+
+```{r}
+data <-read_excel("steelers.xlsx")
+data[is.na(data)] <- 0
+```
+
+Summary of Data
+
+```{r}
+summary(data)
+```
+
+General Calculations 
+
+```{r}
+#structure of data
+str(data)
+
+#total amuont of observations - 3000
+length(data$id) 
+
+#number of unqie user IDs in the data - 300
+length(unique(data$id))
+```
+
+
+1. Season ticket holder ticket utilization. Explain how you defined utilization.
+
+Define Utilization: What is the each tickets end point?
+
+Under the scope of this analysis, there are six possible ticket options for each game:
+
+Flow chart: 
+Active, Yes
+Active, No
+Forward, Yes
+Forward, No
+Resold, Yes
+Resold, No
+
+General breakdown?
+Per person: How did they behave? 
+Per game how were tickets utilized as a whole?
+
+Idea: Pie Chart
+
+Finding all outcomes
+
+**Chart** 
+```{r}
+act_yes <- filter(data, ticket_action =="Active" , attended=="Y")
+act_no <- filter(data, ticket_action =="Active" , attended=="N")
+forward_yes <- filter(data, ticket_action =="Forward" , attended=="Y")
+forward_no <- filter(data, ticket_action =="Forward" , attended=="N")
+resold_yes <- filter(data, ticket_action =="Resold" , attended=="Y")
+resold_no <- filter(data, ticket_action =="Resold" , attended=="N")
+
+# How many of each occurrence? 
+tally(act_yes) #512
+tally(act_no) #516
+tally(forward_yes) #493
+tally(forward_no) #488
+tally(resold_yes) #509
+tally(resold_no) #482
+
+# Percentage Breakdown
+per1 = tally(act_yes)/length(data$id) # 0.1760667
+per2 = tally(act_no)/length(data$id) # 0.172	
+per3 = tally(forward_yes)/length(data$id) #0.1643333	
+per4 = tally(forward_no)/length(data$id) #0.1626667	
+per5 = tally(resold_yes)/length(data$id) #0.1696667
+per6 = tally(resold_no)/length(data$id) #0.1606667	
+```
+
+**Key Facts**
+
+What was most attended game? 
+
+Most resold game? 
+
+Most forward but no resold game?
+
+```{r}
+#Game by game breakdown vs. each team 
+#Active, Yes
+by_game1 <- act_yes %>% group_by(opponent)
+df1 <- by_game1 %>% tally(sort = TRUE)
+               
+# Active, No
+by_game2 <- act_no %>% group_by(opponent)
+df2 <- by_game2 %>% tally(sort = TRUE)
+
+# Forward, Yes
+by_game3 <- forward_yes %>% group_by(opponent)
+df3 <- by_game3 %>% tally(sort = TRUE)
+
+# Forward, No
+by_game4 <- forward_no %>% group_by(opponent)
+df4 <- by_game4 %>% tally(sort = TRUE)
+
+# Resold, Yes
+by_game5 <- resold_yes %>% group_by(opponent)
+df5 <- by_game5 %>% tally(sort = TRUE)
+
+# Resold, No
+by_game6 <- resold_no %>% group_by(opponent)
+df6 <- by_game6 %>% tally(sort = TRUE)
+
+#Group all outcomes by opponent 
+df_list <- list(df1, df2, df3,df4,df5,df6)
+teams <- df_list %>% reduce(full_join, by = 'opponent')
+teams 
+colnames(teams) <- c("opponent","act_yes", "act_no", "fwd_yes", "fwd_no", "res_yes","res_no")
+#Data for team by team plot
+teams
+write_xlsx(teams,"~/gamebygame.xlsx")
+```
+|
+|-------------------**Plot this with logos**
+
+
+
+**Chart** Do people ultimately end up in the stadium? 
+
+```{r}
+#Active - 
+a=tally(act_yes) #512
+b=tally(forward_yes) #493
+c=tally(resold_yes) #509
+yes = a+b+c # 1514
+
+#Not Active
+d=tally(act_no) #516
+e=tally(forward_no) #488
+f=tally(resold_no) #482
+no= d+e+f #1416
+
+#Total Percentages Active vs Not Active
+check=yes+no
+yes/check #0.5046667
+no/check #0.4953333	
+```
+```{r}
+str(data)
+#Ravens,Patriots at $150 
+#Bengals, Seahawks, Vikings at $120
+#Packers,Texans, Jags,Browns at $100
+#Eagles at $80
+```
+
+2. Season value per season ticket holder. Explain your value formula.
+
+Face values of originally purchased games + value of games sold on secondary markets + number of games ticket was forwarded / total amount of unique IDs
+
+300 unique ID's 
+Average Value?
+
+```{r}
+#Gross Values
+x=sum(data$face_value) #342000
+y=sum(data$secondary_price) #161457
+z=tally(forward_yes) #493
+gross1=x+y 
+gross2=x+y+z
+
+#Per Ticket Holder
+val1=gross1/300 # 1678.19
+val1
+val2=gross2/300 # 1679.833
+```
+
+
+```{r}
+512/300 # Overall 
+tt1=100/300 # Pats + Ravens (1)
+tt2=151/300 #(2) 
+tt3=204/300 #(3)
+tt4=57/300#(4)
+tt1
+tt2
+tt3
+tt4
+tt1+tt2+tt3+tt4
+```
+
+
+
+Mutually beneficial = people who buy tickets and come to a lot of games
+
+3. Identify season ticket holder segments that should be contacted by a ticket rep. Explain why you are recommending a direct communication with these season ticket holders.
+
+```{r}
+datacopy <- data
+datacopy
+datacopy$opponent <- as.factor(datacopy$opponent)
+datacopy$ticket_action <- as.factor(datacopy$ticket_action)
+datacopy$attended <- as.factor(datacopy$attended)
+unique(datacopy$opponent)
+str(datacopy$ticket_action)
+opponent = c('Patriots', 'Ravens','Vikings','Seahawks','Bengals','Packers','Texans','Jaguars','Browns','Eagles')
+tier = c(1,1,2,2,2,3,3,3,3,4)
+team_tier = cbind(opponent,tier)
+team_tier
+teamlist = list(team_tier)
+clustdata <- teamlist%>%  reduce(full_join, by = opponent)
+clustdata <- merge(datacopy,clustdata)
+
+model_data <- select(clustdata,tier,face_value,ticket_action,attended,secondary_price)
+model_data
+clarafb <- clara(model_data,k=6, samples = 3000, pamLike = TRUE)
+```
+
+```{r}
+#Fans who went to at least one game  
+loyal <- act_yes %>% group_by(id)
+loyal_count <- loyal %>% tally(sort = TRUE)
+loyal_count
+sum(loyal_count$n)
+
+sum(loyal_count$n)
+mean(loyal_count$n) #2.03
+
+#majority of season ticket holder only go and scan to 1 game
+hist(loyal_count$n)
+
+
+g1=count(loyal_count$n == 1) #101
+g2=count(loyal_count$n == 2) #81
+g3=count(loyal_count$n == 3) #51
+g4=count(loyal_count$n == 4) #13
+g5=count(loyal_count$n == 5) #5
+g6=count(loyal_count$n == 6) #0
+g7=count(loyal_count$n == 7) #0
+g8=count(loyal_count$n == 8) #0
+g9=count(loyal_count$n == 9) #1
+g10=count(loyal_count$n == 10) #1
+
+101+81
+51+13+5+1+1
+
+
+
+81+51+13+5+2
+152+101
+
+#resell
+res_guys <- resold_yes %>% group_by(id)
+res_count <- res_guys  %>% tally(sort = TRUE)
+res_count
+hist(res_count$n)
+write_xlsx(res_count,"~/rescount.xlsx")
+
+
+sort <- data %>% group_by(id)
+dfsort <- sort %>% tally(sort = TRUE)
+dfsort
+
+
+loyal <- act_yes %>% group_by(id)
+loyal_count <- loyal %>% tally(sort = TRUE)
+loyal_count
+write_xlsx(loyal_count,"~/loyalcount.xlsx")
+
+
+#percentage that went to at least one game
+253/300 #84.3% 
+
+#percentatage of fans that go to more than 6 game s
+(2/300)*100 #0.67% 
+
+#percentage of fans that attend 4 or less games #82% 
+lessfour = 101+81+51+13
+x=lessfour/300
+x
+
+#percentage that re-sold at least oe game 
+
+#Only 2 customers went to more games than not 
+
+#cancel candidates 
+data
+cancel <- filter(data, ticket_action =="Actvie"  | ticket_action == "Forward", attended =="N")
+can <- cancel %>% group_by(id)
+can_count <- can %>% tally(sort = TRUE)
+can_count
+write_xlsx(can_count,"~/can_count.xlsx")
+hist(can_count$n)
+
+63/300 #3 and over --> 21% 
+
+#resellers 
+resellers2 <- filter(data, ticket_action =="Resold", attended =="N" | attended == "Y")
+reso <- resellers2 %>% group_by(id)
+res_count <- reso%>% tally(sort = TRUE)
+res_count
+write_xlsx(res_count,"~/res_count2.xlsx")
+#filter(res_count$n>=3)
+65/300 # over five ---22%  
+```
+
+
+```{r}
+summary(as.factor(clarafb$clustering))
+```
+
+```{r}
+clarafb$medoids
+```
+
+```{r}
+summary <- cbind(model_data, cluster = clarafb$cluster)
+results_check <- head(summary, n = 50)
+paged_table(results_check)
+results_check
+```
+
+```{r}
+#kpres <- kproto(datacopy,6, lambda = 25)
+#see = clprofiles(kpres, datacopy)
+#see
+```
+
+
+
+```{r}
+clustplotfb = fviz_cluster(clarafb, choose.vars = NULL, stand = TRUE,
+  axes = c(1, 2), geom = c("point"), repel = FALSE,
+  show.clust.cent = TRUE, ellipse = TRUE, ellipse.type = "convex",
+  ellipse.level = 0.95, ellipse.alpha = 0.2, shape = NULL,
+  pointsize = 1.5, labelsize = 12, main = "Cluster plot",
+  xlab = NULL, ylab = NULL, outlier.color = "black",
+  outlier.shape = 19, outlier.pointsize = pointsize,
+  outlier.labelsize = labelsize, ggtheme = theme_grey())
+clustplotfb
+```
+```{r}
+#colMeans(new.segment.data[clara.res2$clustering == 1,colnames(clara.res2$medoids)], na.rm = TRUE)
+```
+
+
+
+**Chart**
+
+What are the proportions for each ticket price? 
+$150 > 600
+$120 > 900
+$100 > 1200
+$80 > 300 
+
+Target those people who are: 
+- not forwarding their ticket, not attending (wasted game, low attendance).
+- those who are forwarding, not attending (what can we do to get you to the game?)
+- core fans, those who bought the ticket? get them in as season ticket holders opposed to one game purchasers on secondary market. (show price comparison)
+
+4. Secondary lift (left?) over face value for each game
+Game by game show the average increase in secondary market vs. first game
+
+```{r}
+data2 <-read_excel("steelers2.xlsx")
+#data2
+```
+
+What percentage of tickets were re-sold? 
+
+```{r}
+resaleper = 991/3000 #0.3303334 --> 33%
+resaleper
+#0.1606667+0.1696667 resold values above
+```
+
+Breakdown of re-sell actions
+
+```{r}
+482/991 # 0.4863774 --> resold and didn't scan (NO)
+509/991 #0.5136226 --> resold and didn't scan (YES)
+```
+
+Most frequently re-sold game
+
+```{r}
+res1 <- data2 %>% group_by(opponent)
+res1 <- res1 %>% tally(sort = TRUE)
+res1
+```
+
+Total Re-sale per opponent 
+
+```{r}
+resale_tot = data2 %>%                            
+  group_by(opponent) %>%                         
+  summarise_at(vars(secondary_price),              
+               list(secondary_price = sum))
+resale_tot
+```
+
+Average re-sale per opponent 
+
+```{r}
+#Bengals
+14738/109	#135.211
+
+#Browns 
+15182/106	#143.2264
+
+#Eagles 
+7508/105 #71.50476
+
+#Jaguars
+13907/102 #136.3431
+
+
+#Packers
+14750/102 #136.3431
+
+#Patriots 
+23205/101	#229.7525
+
+#Ravens 
+25370/97 #261.5464
+
+#Seahwawks
+14731/90 #163.6778
+
+#Texans 
+15863/90 #176.2556
+
+#Vikings
+16203/89 #182.0562
+```
+
+Compare this to average face value price
+
+**Bar Graph** showing game by game 
+
+```{r}
+
+```
+
